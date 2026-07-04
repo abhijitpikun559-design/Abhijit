@@ -4,7 +4,7 @@ Authentication utilities - JWT token handling and password management
 
 import os
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -22,7 +22,7 @@ class TokenData(BaseModel):
     """Token payload data"""
     sub: str  # user_id
     exp: Optional[datetime] = None
-    type: str = "access"  # access or refresh
+    token_type: str = "access"  # access or refresh
 
 def hash_password(password: str) -> str:
     """Hash a password"""
@@ -30,26 +30,37 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        return False
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire, "type": "access"})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    to_encode.update({"exp": expire, "token_type": "access"})
+    try:
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return encoded_jwt
+    except Exception as e:
+        print(f"Error encoding token: {e}")
+        raise
 
-def create_refresh_token(data: dict) -> str:
+def create_refresh_token(data: Dict[str, Any]) -> str:
     """Create JWT refresh token"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    to_encode.update({"exp": expire, "token_type": "refresh"})
+    try:
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return encoded_jwt
+    except Exception as e:
+        print(f"Error encoding refresh token: {e}")
+        raise
 
 def decode_token(token: str) -> Optional[TokenData]:
     """Decode and validate JWT token"""
@@ -58,6 +69,10 @@ def decode_token(token: str) -> Optional[TokenData]:
         user_id: str = payload.get("sub")
         if user_id is None:
             return None
-        return TokenData(sub=user_id)
-    except JWTError:
+        return TokenData(sub=user_id, token_type=payload.get("token_type", "access"))
+    except JWTError as e:
+        print(f"JWT decode error: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error decoding token: {e}")
         return None

@@ -45,15 +45,21 @@ async def get_db():
 
 async def init_db():
     """Initialize database and create tables"""
-    async with engine.begin() as conn:
-        # Import all models to register them
-        from database.models import Base
-        
-        # Create all tables
-        await conn.run_sync(Base.metadata.create_all)
-        print("✅ Database tables created successfully")
+    try:
+        async with engine.begin() as conn:
+            # Import all models to register them
+            from database.models import Base
+            
+            # Create all tables
+            await conn.run_sync(Base.metadata.create_all)
+            print("✅ Database tables created successfully")
+    except Exception as e:
+        print(f"⚠️  Database initialization error: {e}")
 
 async def close_db():
     """Close database connection"""
-    await engine.dispose()
-    print("✅ Database connection closed")
+    try:
+        await engine.dispose()
+        print("✅ Database connection closed")
+    except Exception as e:
+        print(f"⚠️  Error closing database: {e}")

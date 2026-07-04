@@ -2,11 +2,12 @@
 Authentication routes - User registration, login, logout
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pydantic import BaseModel, EmailStr, Field
 from datetime import timedelta
+from typing import Optional
 
 from database.connection import get_db
 from database.models import User
@@ -64,7 +65,8 @@ class UserResponse(BaseModel):
     username: str
     email: str
     full_name: str
-    avatar_url: str = None
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
     created_at: str
     
     class Config:
@@ -163,13 +165,13 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     }
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(token: str, db: AsyncSession = Depends(get_db)):
+async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
     """
     Refresh access token using refresh token
     
-    - **token**: Valid refresh token
+    - **refresh_token**: Valid refresh token
     """
-    token_data = decode_token(token)
+    token_data = decode_token(refresh_token)
     if not token_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -189,11 +191,11 @@ async def refresh_token(token: str, db: AsyncSession = Depends(get_db)):
     
     # Create new tokens
     access_token = create_access_token(data={"sub": user.id})
-    refresh_token = create_refresh_token(data={"sub": user.id})
+    new_refresh_token = create_refresh_token(data={"sub": user.id})
     
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -205,23 +207,32 @@ async def refresh_token(token: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
-    token: str = None,
+    authorization: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get current authenticated user
+    
+    Requires: Authorization: Bearer <token>
     """
-    if not token:
+    if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated"
         )
     
-    token_data = decode_token(token)
-    if not token_data:
+    try:
+        token = authorization.split(" ")[1] if " " in authorization else authorization
+        token_data = decode_token(token)
+        if not token_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token"
+            )
+    except IndexError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token"
+            detail="Invalid authorization header"
         )
     
     stmt = select(User).where(User.id == token_data.sub)

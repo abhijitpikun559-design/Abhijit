@@ -2,10 +2,11 @@
 Document management routes - Upload, list, delete documents
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pydantic import BaseModel
+from typing import Optional
 import os
 import aiofiles
 import uuid
@@ -21,20 +22,20 @@ class DocumentCreate(BaseModel):
     """Document creation schema"""
     title: str
     subject_id: str
-    description: str = None
-    semester: str = None
-    topic: str = None
+    description: Optional[str] = None
+    semester: Optional[str] = None
+    topic: Optional[str] = None
 
 class DocumentResponse(BaseModel):
     """Document response schema"""
     id: str
     title: str
-    description: str = None
+    description: Optional[str] = None
     file_type: str
     file_size: int
-    total_pages: int = None
-    semester: str = None
-    topic: str = None
+    total_pages: Optional[int] = None
+    semester: Optional[str] = None
+    topic: Optional[str] = None
     is_processed: bool
     created_at: str
     
@@ -99,8 +100,14 @@ async def upload_document(
     file_path = os.path.join(upload_dir, unique_filename)
     
     # Save file
-    async with aiofiles.open(file_path, "wb") as f:
-        await f.write(file_content)
+    try:
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(file_content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save file: {str(e)}"
+        )
     
     # Create document record
     document = Document(
@@ -124,8 +131,8 @@ async def upload_document(
 
 @router.get("/")
 async def list_documents(
-    user_id: str,
-    subject_id: str = None,
+    user_id: str = Query(...),
+    subject_id: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -168,7 +175,7 @@ async def get_document(
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_document(
     document_id: str,
-    user_id: str,
+    user_id: str = Query(...),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -191,7 +198,10 @@ async def delete_document(
     file_path = os.path.join(upload_dir, document.file_path)
     
     if os.path.exists(file_path):
-        os.remove(file_path)
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            print(f"Warning: Could not delete file: {e}")
     
     # Delete database record
     await db.delete(document)
@@ -202,9 +212,9 @@ async def delete_document(
 @router.put("/{document_id}")
 async def update_document(
     document_id: str,
-    user_id: str,
-    title: str = None,
-    description: str = None,
+    user_id: str = Query(...),
+    title: Optional[str] = Query(None),
+    description: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
