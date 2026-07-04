@@ -2,10 +2,12 @@
 User Profile routes - Profile management and settings
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
 from database.connection import get_db
 from database.models import User
@@ -14,9 +16,9 @@ router = APIRouter()
 
 class UserUpdate(BaseModel):
     """User update schema"""
-    full_name: str = None
-    bio: str = None
-    avatar_url: str = None
+    full_name: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 class UserProfileResponse(BaseModel):
     """User profile response"""
@@ -24,9 +26,10 @@ class UserProfileResponse(BaseModel):
     username: str
     email: str
     full_name: str
-    bio: str = None
-    avatar_url: str = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
     created_at: str
+    is_active: bool
     
     class Config:
         from_attributes = True
@@ -77,6 +80,7 @@ async def update_user_profile(
     if update_data.avatar_url:
         user.avatar_url = update_data.avatar_url
     
+    user.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(user)
     
@@ -104,3 +108,30 @@ async def delete_user(
     await db.commit()
     
     return None
+
+@router.get("/statistics/{user_id}")
+async def get_user_statistics(
+    user_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get user statistics
+    """
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # TODO: Calculate user statistics
+    return {
+        "user_id": user_id,
+        "total_documents": 0,
+        "total_flashcards": 0,
+        "total_quizzes_taken": 0,
+        "total_study_hours": 0.0
+    }
